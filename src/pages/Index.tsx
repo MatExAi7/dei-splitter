@@ -5,8 +5,11 @@ import { BillForm } from '@/components/BillForm';
 import { JsonEditor } from '@/components/JsonEditor';
 import { ResultsDisplay } from '@/components/ResultsDisplay';
 import { HistoryPanel } from '@/components/HistoryPanel';
-import { BillData, CalculationResult } from '@/lib/types';
-import { calculateSplit, DEMO_BILL } from '@/lib/calculations';
+import { PdfUpload } from '@/components/PdfUpload';
+import { ParsedFieldsPreview, AppliedParsedData } from '@/components/ParsedFieldsPreview';
+import { BillData, CalculationResult, DEFAULT_SQM, DEFAULT_VAT_INCLUDES } from '@/lib/types';
+import { calculateSplit } from '@/lib/calculations';
+import { ParsedBillData } from '@/lib/pdfParser';
 import { toast } from 'sonner';
 
 const Index = () => {
@@ -15,6 +18,8 @@ const Index = () => {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [currentBillData, setCurrentBillData] = useState<BillData | null>(null);
   const [formKey, setFormKey] = useState(0);
+  const [parsedPdfData, setParsedPdfData] = useState<ParsedBillData | null>(null);
+  const [showPdfUpload, setShowPdfUpload] = useState(true);
 
   const handleCalculate = (data: BillData) => {
     try {
@@ -45,9 +50,64 @@ const Index = () => {
     }
   };
 
+  const handlePdfParsed = (data: ParsedBillData) => {
+    setParsedPdfData(data);
+    setShowPdfUpload(false);
+  };
+
+  const handleApplyParsedData = (appliedData: AppliedParsedData) => {
+    // Convert parsed data to BillData format and populate the form
+    const billData: BillData = {
+      period: {
+        from: appliedData.periodFrom || '',
+        to: appliedData.periodTo || '',
+      },
+      kwh: {
+        matina: 0, // User needs to fill this
+        katerina: 0, // User needs to fill this
+      },
+      sqm: DEFAULT_SQM,
+      charges: {
+        energy_supply: appliedData.energy_supply,
+        fixed_fee: appliedData.fixed_fee,
+        regulated: appliedData.regulated,
+        misc: appliedData.misc,
+        municipal_fees_dt: appliedData.municipal_fees_dt,
+        municipal_tax_df: appliedData.municipal_tax_df,
+        tap: appliedData.tap,
+        ert: appliedData.ert,
+        vat: {
+          mode: 'amount',
+          value: appliedData.vat,
+        },
+        credit: {
+          enabled: false,
+          amount: 0,
+          split: 'kwh',
+        },
+      },
+      vat_includes: DEFAULT_VAT_INCLUDES,
+    };
+
+    setCurrentBillData(billData);
+    setParsedPdfData(null);
+    setShowPdfUpload(false);
+    setFormKey(prev => prev + 1);
+    setMode('form');
+    
+    toast.success('Τα στοιχεία εφαρμόστηκαν στη φόρμα. Συμπληρώστε τις kWh.');
+  };
+
+  const handleCancelParsed = () => {
+    setParsedPdfData(null);
+    setShowPdfUpload(true);
+  };
+
   const handleReset = () => {
     setResult(null);
     setCurrentBillData(null);
+    setParsedPdfData(null);
+    setShowPdfUpload(true);
   };
 
   return (
@@ -66,13 +126,44 @@ const Index = () => {
             </p>
           </div>
 
+          {/* PDF Upload Section */}
+          {showPdfUpload && !parsedPdfData && (
+            <div className="mb-8 card-elevated p-6">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="text-xl">📄</span>
+                <h3 className="font-display text-lg font-semibold">Ανέβασμα PDF ΔΕΗ</h3>
+                <span className="ml-auto text-xs text-muted-foreground">Προαιρετικό</span>
+              </div>
+              <PdfUpload onParsed={handlePdfParsed} />
+              <button
+                onClick={() => setShowPdfUpload(false)}
+                className="mt-4 w-full text-center text-sm text-muted-foreground hover:text-foreground"
+              >
+                Παράλειψη — Χειροκίνητη εισαγωγή
+              </button>
+            </div>
+          )}
+
+          {/* Parsed Fields Preview */}
+          {parsedPdfData && (
+            <div className="mb-8 card-elevated p-6">
+              <ParsedFieldsPreview
+                data={parsedPdfData}
+                onApply={handleApplyParsedData}
+                onCancel={handleCancelParsed}
+              />
+            </div>
+          )}
+
           {/* Mode Toggle */}
-          <div className="mb-6 flex justify-center">
-            <ModeToggle mode={mode} onChange={setMode} />
-          </div>
+          {!parsedPdfData && (
+            <div className="mb-6 flex justify-center">
+              <ModeToggle mode={mode} onChange={setMode} />
+            </div>
+          )}
 
           {/* Input Section */}
-          {mode === 'form' ? (
+          {!parsedPdfData && (mode === 'form' ? (
             <BillForm 
               key={formKey}
               initialData={currentBillData || undefined} 
@@ -80,7 +171,7 @@ const Index = () => {
             />
           ) : (
             <JsonEditor onCalculate={handleCalculate} />
-          )}
+          ))}
 
           {/* Results Section */}
           {result && currentBillData && (
